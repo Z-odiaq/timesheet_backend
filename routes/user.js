@@ -1,0 +1,265 @@
+
+const express = require("express");
+const { check, validationResult } = require("express-validator");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const router = express.Router();
+
+const userSchema = require("../Schema/User");
+const demandeSchema = require("../Schema/Demande");
+const holidaysSchema = require("../Schema/Holidays");
+
+
+const auth = require("../auth");
+const { routerAuth, isManager, userAuth } = require("../auth");
+const { Int32 } = require("mongojs");
+const { json } = require("express");
+
+
+
+
+
+
+
+router.post("/login",
+    [
+        check("email", "Email incorrect").isEmail(),
+        check("password", "Mot de passe incorrect").isLength({
+            min: 6
+        })
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                Error: "Please check your credentials."
+            });
+        }
+
+        var { email, password } = req.body;
+        email = email.toLowerCase();
+
+        try {
+            let user = await userSchema.findOne({
+                email
+            });
+
+            if (!user) {
+                console.log('user does not exist ' + email)
+                return res.status(400).json({
+                    Error: "Account does not exist!\nPlease register first."
+                });
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch)
+                return res.status(400).json({
+                    Error: "Password is Incorrect!"
+                });
+
+            const payload = { user: { id: user.id } };
+
+            jwt.sign(payload, "mlou5iya",
+                {
+                    //expiresIn: 1000000
+                },
+                (err, token) => {
+                    if (err) throw err;
+                    res.status(200).json({ token });
+                }
+            );
+        } catch (e) {
+            console.error("Server Error" + e);
+            res.status(500).json({
+                Error: "Server Error"
+            });
+        }
+    }
+);
+
+
+router.post("/register",
+    [
+        check("nom", "Please Enter a Valid First Name").not().isEmpty(),
+        check("prenom", "Please Enter a Valid Last Name").not().isEmpty(),
+        check("departement", "Please Enter a Valid Last Name").not().isEmpty(),
+        check("jobtitle", "Please Enter a Valid Last Name").not().isEmpty(),
+        check("contracttype", "Please Enter a Valid Last Name").not().isEmpty(),
+        check("profilepicture", "Please Enter a Valid Last Name").not().isEmpty(),
+        check("telephone", "Please Enter a Valid Last Name").not().isEmpty(),
+
+        check("email", "Please enter a valid email").isEmail(),
+        // check("password", "Please enter a valid password").isLength({ min: 6 })
+
+    ],
+    async (req, res) => {
+        const errorFormatter = ({ param, msg }) => { return `${param}: ${msg}`; };
+        //const errors = validationResult(req);
+
+        const errors = validationResult(req).formatWith(errorFormatter);
+
+        if (!errors.isEmpty()) {
+            console.log(JSON.stringify(req.body))
+            console.log(JSON.stringify(errors))
+
+            return res.status(400).json({
+                Error: errors.array()
+            });
+
+        }
+        const {
+            nom,
+            prenom,
+            email,
+            role,
+            telephone,
+            profilepicture,
+            manager,
+            contracttype,
+            jobtitle,
+            departement,
+
+        } = req.body;
+        try {
+            let user = await userSchema.findOne({ email });
+            if (user) {
+
+                return res.status(400).json({
+                    Error: "User Already Exists"
+                });
+            }
+            user = new userSchema({
+                nom,
+                prenom,
+                email,
+                role,
+                telephone,
+                profilepicture,
+                manager,
+                contracttype,
+                jobtitle,
+                departement,
+            });
+
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+            await user.save();
+
+            const payload = {
+                user: { id: user.id }
+            };
+
+            jwt.sign(payload, "mlou5iya", {
+                expiresIn: 100000000
+            },
+                (err, token) => {
+                    if (err) throw err;
+                    res.status(200).json({
+                        token
+                    });
+                }
+            );
+        } catch (err) {
+            console.log(err.message);
+            res.status(500).send("Error in Saving");
+        }
+    }
+);
+
+
+//create
+router.post("/demande", userAuth, async (req, res) => {
+    const { leaveDays, reason } = req.body;
+    const user = await userSchema.findById(req.session.employeeId).select({ soldeConges: 1 })
+
+    if (leaveDays > user.soldeConges) {
+
+        const demande = new demandeSchema({
+            employee_id: req.session.employeeId,
+            leave_days: leaveDays,
+            status: "Pending",
+            reason: reason,
+        });
+        try {
+            await demande.save();
+            res.status(200).json({ message: "Leave application submitted successfully." });
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    } else {
+        res.status(400).json({ error: "Employee doesn't have enough leave days." });
+    }
+});
+
+
+//get demande by id
+router.get("/demande/:id", userAuth,
+    async (req, res) => {
+        try {
+            const demandes = await demandeSchema.findById(req.params.id);
+            res.json(demandes);
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
+    });
+
+//get all demande
+router.get("/demande", userAuth,
+    async (req, res) => {
+
+        try {
+            await demandeSchema.find({ "employee_id": ObjectID(req.user.id) }, async (err, doc) => {
+                if (err || !doc) {
+                    res.status(500).json({ message: err });
+                } else {
+                    res.status(200).json(doc);
+                }
+            })
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
+    });
+
+
+//delete
+router.delete("/demande/:id", userAuth,
+    async (req, res) => {
+
+        try {
+            await demandeSchema.find({ "_id": ObjectID(req.params.id), status: "pending" }, async (err, doc) => {
+                if (err || !doc) {
+                    res.status(500).json({ message: "no pending applications" });
+                } else {
+                    demandeSchema.findByIdAndDelete(req.params.id);
+                    res.status(201).json({ message: "deleted successfully" });
+
+                }
+            })
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
+//update
+router.patch("/demande/:id", userAuth,
+
+    async (req, res) => {
+        const { demande } = req.body;
+
+        try {
+            demandeSchema.updateOne({ "_id": ObjectID(req.body.letterID) }, { '$set': { leave_days: demande.demande } }, { runValidators: true }, async (err, doc) => {
+                if (err || !doc) {
+                    console.log("no users: " + err)
+                    return res.status(500).json({ Error: "Something went wrong." });
+                } else {
+                    res.status(201).json({ message: "update successfully" });
+
+                }
+            })
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
+module.exports = router;
