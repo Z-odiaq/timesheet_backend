@@ -5,32 +5,27 @@ const UserSchema = new Schema({
     nom: {
         type: String,
         required: true,
-        unique: true
     },
     prenom: {
         type: String,
         required: true,
-        unique: true
     },
     email: {
         type: String,
         required: true,
         unique: true
+
     },
     departement: {
         type: String,
-        required: true,
-        unique: true
     },
     jobtitle: {
         type: String,
         required: true,
-        unique: true
     },
     contracttype: {
         type: String,
         required: true,
-        unique: true
     },
     manager: {
         type: Schema.Types.ObjectId,

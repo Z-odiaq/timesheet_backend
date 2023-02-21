@@ -248,7 +248,7 @@ router.patch("/demande/:id", userAuth,
         const { demande } = req.body;
 
         try {
-            demandeSchema.updateOne({ "_id": ObjectID(req.body.letterID) }, { '$set': { leave_days: demande.demande } }, { runValidators: true }, async (err, doc) => {
+            demandeSchema.updateOne({ "_id": ObjectID(req.params.id) }, { '$set': { leave_days: demande.demande } }, { runValidators: true }, async (err, doc) => {
                 if (err || !doc) {
                     console.log("no users: " + err)
                     return res.status(500).json({ Error: "Something went wrong." });
@@ -261,5 +261,38 @@ router.patch("/demande/:id", userAuth,
             res.status(400).json({ message: err.message });
         }
     });
+
+//update profile
+router.patch("/profile/:id", userAuth,
+
+    async (req, res) => {
+        const { user } = req.body;
+
+        user.passsword ? (user.password = await bcrypt.hash(user.passsword, await bcrypt.genSalt(10))) : null
+        user.role ? delete user['role'] : null;
+        user.email ? delete user['email'] : null;
+        user.manager ? delete user['manager'] : null;
+        user.contracttype ? delete user['contracttype'] : null;
+        user.departement ? delete user['departement'] : null;
+        user.jobtitle ? delete user['jobtitle'] : null;
+
+
+
+
+        try {
+            userSchema.updateOne({ "_id": ObjectID(req.params.id) }, { '$set': user }, { runValidators: true }, async (err, doc) => {
+                if (err || !doc) {
+                    console.log("no users: " + err)
+                    return res.status(500).json({ Error: "Something went wrong." });
+                } else {
+                    res.status(201).json({ message: "update successfully" });
+
+                }
+            })
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
 
 module.exports = router;

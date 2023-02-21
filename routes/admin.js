@@ -32,7 +32,7 @@ router.patch("/process/:id", isManager,
         const { demande } = req.body;
 
         try {
-            demandeSchema.updateOne({ "_id": ObjectID(req.body.letterID) }, { '$set': { status: demande.status, comment: demande.comment } }, { runValidators: true }, async (err, doc) => {
+            demandeSchema.updateOne({ "_id": ObjectID(req.params.id) }, { '$set': { status: demande.status, comment: demande.comment } }, { runValidators: true }, async (err, doc) => {
                 if (err || !doc) {
                     return res.status(500).json({ Error: "Something went wrong." });
                 } else {
@@ -84,5 +84,28 @@ router.get("/pendingApps/user/:id", isManager,
             res.status(400).json({ message: err.message });
         }
     });
+
+//update profile
+router.patch("/user/:id", isManager,
+
+    async (req, res) => {
+        const { user } = req.body;
+
+        user.passsword ? (user.password = await bcrypt.hash(user.passsword, await bcrypt.genSalt(10))) : null
+        try {
+            userSchema.updateOne({ "_id": ObjectID(req.params.id) }, { '$set': user }, { runValidators: true }, async (err, doc) => {
+                if (err || !doc) {
+                    console.log("no users: " + err)
+                    return res.status(500).json({ Error: "Something went wrong." });
+                } else {
+                    res.status(201).json({ message: "update successfully" });
+
+                }
+            })
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
 
 module.exports = router;
