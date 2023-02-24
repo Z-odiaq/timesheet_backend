@@ -42,7 +42,7 @@ const UserSchema = new Schema({
     },
     soldeConges: {
         type: Number,
-        required: true
+        default: 20
     },
     password: {
         type: String,
