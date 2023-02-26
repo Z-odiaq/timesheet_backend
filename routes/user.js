@@ -125,7 +125,7 @@ router.post('/upload-cv', upload.single('cv'), (req, res) => {
     res.send(filename + "." + req.file.mimetype.split('/')[1]);
 });
 
-router.post("/recommandation", userAuth, async (req, res) => {
+router.post("/recommendation", userAuth, async (req, res) => {
     const { nom, prenom, poste, email, message, telephone, file } = req.body;
     const user = await userSchema.findById(req.user.id).select({ nom: 1, prenom: 1, email: 1 })
     const demande = new Recommendation({
@@ -144,10 +144,10 @@ router.post("/recommandation", userAuth, async (req, res) => {
     });
     try {
         await demande.save();
-        res.status(200).json({ message: "Recommandation submitted successfully." });
+        res.status(200).json({ message: "Recommendation submitted successfully." });
     } catch (err) {
         console.log(err);
-        res.status(400).json({ message: "Recommandation Error" });
+        res.status(400).json({ message: "Recommendation Error" });
     }
 });
 

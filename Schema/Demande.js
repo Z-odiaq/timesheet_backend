@@ -41,10 +41,6 @@ const DemandeSchema = new Schema({
         type: String,
         required: true
     },
-    soldeConges: {
-        type: Number,
-        required: true
-    },
     userpicture: {
         type: String,
         required: true

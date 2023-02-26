@@ -26,32 +26,6 @@ router.get("/",
 );
 
 
-router.patch("/process/:id", isManager,
-
-    async (req, res) => {
-        const { demande } = req.body;
-
-        try {
-            demandeSchema.updateOne({ "_id": ObjectID(req.params.id) }, { '$set': { status: demande.status, comment: demande.comment } }, { runValidators: true }, async (err, doc) => {
-                if (err || !doc) {
-                    return res.status(500).json({ Error: "Something went wrong." });
-                } else {
-                    if (demande.status == "accepted") {
-                        await userSchema.updateOne({ "_id": ObjectID(req.body.userID) }, { '$inc': { leave_days: -demande.leave_days } }, { runValidators: true }, async (err, doc) => {
-                            if (err || !doc) {
-                                return res.status(500).json({ Error: "Something went wrong." });
-                            } else {
-                                res.status(201).json({ message: "update successfully" });
-                            }
-                        })
-                    }
-                    res.status(201).json({ message: "update successfully" });
-                }
-            })
-        } catch (err) {
-            res.status(400).json({ message: err.message });
-        }
-    });
 
 
 
@@ -59,55 +33,94 @@ router.patch("/process/:id", isManager,
 router.get("/applications", isManager,
     async (req, res) => {
         try {
-            const alldemandes = await demandeSchema.find({ "status": "pending" });
-            res.status(201).json(alldemandes);
+            const demandes = await demandeSchema.find({ "status": "pending" });
+            const updatedDemandes = await Promise.all(demandes.map(async (demande) => {
+                const user = await userSchema.findOne({ "_id": ObjectId(demande.user) }, { soldeConges: 1, soldeMaladie: 1, _id: 0 });
+
+                return {
+                    ...demande.toObject(),
+                    soldeConges: user.soldeConges,
+                    soldeMaladie: user.soldeMaladie
+                }
+            }));
+
+            res.status(201).json(updatedDemandes);
         } catch (err) {
             res.status(400).json({ message: err.message });
         }
-    });
-router.get("/applications/:id", isManager,
-    async (req, res) => {
-        try {
-            const alldemandes = await demandeSchema.find({ "_id": ObjectID(req.params.id) });
-            res.status(201).json(alldemandes);
-        } catch (err) {
-            res.status(400).json({ message: err.message });
-        }
+
     });
 
-router.get("/applications/user/:id", isManager,
-    async (req, res) => {
-        try {
-            const alldemandes = await demandeSchema.find({ employee_id: ObjectID(req.params.id) });
-            res.status(201).json(alldemandes);
-        } catch (err) {
-            res.status(400).json({ message: err.message });
-        }
-    });
+
+
 
 
 router.patch("/applications/:id", isManager,
 
     async (req, res) => {
-        const { status, comment } = req.body;
-        console.log(JSON.stringify(status));
-        try {
-            demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status, comment: comment } }, { runValidators: true }, async (err, doc) => {
-                if (err || !doc) {
-                    console.log("applications patch: " + err)
-                    return res.status(500).json({ Error: "Something went wrong." });
-                } else {
-                    console.log("applications patch: ok ")
-                    res.status(201).json({ message: "update successfully" });
+        const { status, days, homeworking, maladie, comment, userID } = req.body;
 
+        try {
+            if (status == "rejected") {
+                demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status, comment: comment } }, { runValidators: true }, async (err, doc) => {
+                    if (err || !doc) {
+                        return res.status(500).json({ Error: "Something went wrong." });
+                    } else {
+                        res.status(201).json({ message: "update successfully" });
+                    }
+                })
+            } else if (status == "accepted" && !homeworking && !maladie) {
+                //get user solde congee
+                const user = await userSchema.findOne({ "_id": ObjectId(userID) }, { soldeConges: 1, _id: 0 });
+                console.log(user);
+                if (user.soldeConges < days) {
+                    return res.status(500).json({ Error: "solde insuffisant" });
                 }
-            })
+                //update user solde congee
+                userSchema.updateOne({ "_id": ObjectId(userID) }, { '$set': { soldeConges: user.soldeConges - days } }, { runValidators: true }, async (err, doc) => {
+                    if (err || !doc) {
+                        return res.status(500).json({ Error: "Something went wrong." });
+                    } else {
+                        demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status, comment: comment } }, { runValidators: true }, async (err, doc) => {
+                            if (err || !doc) {
+                                return res.status(500).json({ Error: "Something went wrong." });
+                            } else {
+                                res.status(201).json({ message: "update successfully" });
+                            }
+                        })
+                    }
+                })
+            } else if (status == "accepted" && homeworking) {
+                demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status, comment: comment } }, { runValidators: true }, async (err, doc) => {
+                    if (err || !doc) {
+                        return res.status(500).json({ Error: "Something went wrong." });
+                    } else {
+                        res.status(201).json({ message: "update successfully" });
+                    }
+                })
+            } else if (status == "accepted" && maladie) {
+                //get user solde maladie
+                const user = await userSchema.findOne({ "_id": ObjectId(userID) }, { soldeMaladie: 1, _id: 0 });
+                if (user.soldeMaladie < days) {
+                    return res.status(500).json({ Error: "solde insuffisant" });
+                }
+                //update user solde maladie
+                userSchema.updateOne({ "_id": ObjectId(userID) }, { '$set': { soldeMaladie: user.soldeMaladie - days } }, { runValidators: true }, async (err, doc) => {
+                    if (err || !doc) {
+                        return res.status(500).json({ Error: "Something went wrong." });
+                    } else {
+                        res.status(201).json({ message: "update successfully" });
+                    }
+                })
+            }
+
         } catch (err) {
-            console.log("applications patch: " + err)
 
             res.status(400).json({ message: err.message });
         }
     });
+
+
 router.patch("/user/:id", isManager,
 
     async (req, res) => {
@@ -127,6 +140,17 @@ router.patch("/user/:id", isManager,
 
                 }
             })
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
+router.get("/userApps/:id", isManager,
+
+    async (req, res) => {
+        try {
+            const alldemandes = await demandeSchema.find({ "userID": req.params.id });
+            res.status(201).json(alldemandes);
         } catch (err) {
             res.status(400).json({ message: err.message });
         }
