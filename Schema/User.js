@@ -44,6 +44,10 @@ const UserSchema = new Schema({
         type: Number,
         default: 20
     },
+    soldeMaladie: {
+        type: Number,
+        default: 20
+    },
     password: {
         type: String,
         required: true

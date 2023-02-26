@@ -15,7 +15,6 @@ var ObjectID = mongojs.ObjectID;
 var db = mongojs('mongodb://localhost:27017/timesheet');
 const userSchema = require("./Schema/User");
 const demandeSchema = require("./Schema/Demande");
-const holidaysSchema = require("./Schema/Holidays");
 const cors = require('cors');
 
 const auth = require("./auth");
@@ -36,9 +35,12 @@ app.get('/api/myroute', (req, res) => {
 app.use("/user", user);
 app.use("/admin", admin);
 
+app.use(express.static('uploads'));
 
-
-
+app.get('/files/:filename', (req, res) => {
+    const filename = req.params.filename;
+    res.sendFile(`C:/Users/moham/Bureau/Timesheet/back/uploads/${filename}`);
+});
 
 server.listen(port, () => console.log('started on port: ' + port));
 

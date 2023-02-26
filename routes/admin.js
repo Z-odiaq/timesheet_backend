@@ -7,7 +7,6 @@ const router = express.Router();
 
 const userSchema = require("../Schema/User");
 const demandeSchema = require("../Schema/Demande");
-const holidaysSchema = require("../Schema/Holidays");
 
 
 const auth = require("../auth");
@@ -15,6 +14,8 @@ const { routerAuth, isManager } = require("../auth");
 const { Int32, ObjectId } = require("mongojs");
 const { json } = require("express");
 const Demande = require("../Schema/Demande");
+const { default: mongoose } = require("mongoose");
+const Recommendation = require("../Schema/Recommendation");
 
 router.get("/",
     async (req, res) => {
@@ -25,7 +26,6 @@ router.get("/",
 );
 
 
-//update
 router.patch("/process/:id", isManager,
 
     async (req, res) => {
@@ -53,7 +53,9 @@ router.patch("/process/:id", isManager,
         }
     });
 
-//get all demandes
+
+
+
 router.get("/applications", isManager,
     async (req, res) => {
         try {
@@ -63,7 +65,6 @@ router.get("/applications", isManager,
             res.status(400).json({ message: err.message });
         }
     });
-//get a demande by id
 router.get("/applications/:id", isManager,
     async (req, res) => {
         try {
@@ -74,7 +75,6 @@ router.get("/applications/:id", isManager,
         }
     });
 
-//get a demande by user
 router.get("/applications/user/:id", isManager,
     async (req, res) => {
         try {
@@ -86,13 +86,13 @@ router.get("/applications/user/:id", isManager,
     });
 
 
-router.put("/applications/:id", isManager,
+router.patch("/applications/:id", isManager,
 
     async (req, res) => {
-        const { status } = req.body;
+        const { status, comment } = req.body;
         console.log(JSON.stringify(status));
         try {
-            demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status } }, { runValidators: true }, async (err, doc) => {
+            demandeSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { status: status, comment: comment } }, { runValidators: true }, async (err, doc) => {
                 if (err || !doc) {
                     console.log("applications patch: " + err)
                     return res.status(500).json({ Error: "Something went wrong." });
@@ -108,15 +108,17 @@ router.put("/applications/:id", isManager,
             res.status(400).json({ message: err.message });
         }
     });
-//update profile
 router.patch("/user/:id", isManager,
 
     async (req, res) => {
-        const { role, passsword } = req.body;
+        const { role, passsword, telephone, contracttype, jobtitle, departement, email, prenom, nom } = req.body;
         console.log(JSON.stringify(req.body));
         passsword ? (password = await bcrypt.hash(passsword, await bcrypt.genSalt(10))) : null
         try {
-            userSchema.updateOne({ "_id": ObjectId(req.params.id) }, { '$set': { role: role } }, { runValidators: true }, async (err, doc) => {
+            userSchema.updateOne({ "_id": ObjectId(req.params.id) }, {
+                '$set':
+                    { role: role, nom: nom, prenom: prenom, passsword: passsword, telephone: telephone, contracttype: contracttype, jobtitle: jobtitle, departement: departement, email: email }
+            }, { runValidators: true }, async (err, doc) => {
                 if (err || !doc) {
                     console.log("no users: " + err)
                     return res.status(500).json({ Error: "Something went wrong." });
@@ -130,8 +132,17 @@ router.patch("/user/:id", isManager,
         }
     });
 
+router.delete("/user/:id", isManager,
 
-//update profile
+    async (req, res) => {
+        try {
+            const alldemandes = await userSchema.deleteOne({ "_id": ObjectId(req.params.id) });
+            res.status(201).json(alldemandes);
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+
 router.get("/users", isManager,
 
     async (req, res) => {
@@ -143,6 +154,26 @@ router.get("/users", isManager,
         }
     });
 
+router.get("/recommendations", isManager,
+
+    async (req, res) => {
+        try {
+            const alldemandes = await Recommendation.find();
+            res.status(201).json(alldemandes);
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
+router.delete("/recommendations/:id", isManager,
+
+    async (req, res) => {
+        try {
+            const alldemandes = await Recommendation.deleteOne({ "_id": ObjectId(req.params.id) });
+            res.status(201).json(alldemandes);
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
+    });
 
 
 router.post("/users",
@@ -188,10 +219,18 @@ router.post("/users",
         } = req.body;
         try {
             let user = await userSchema.findOne({ email });
+            let user2 = await userSchema.findOne({ telephone });
+
             if (user) {
 
                 return res.status(400).json({
-                    Error: "User Already Exists"
+                    message: "User Already Exists"
+                });
+            }
+            if (user2) {
+
+                return res.status(400).json({
+                    message: "Phone Already Exists"
                 });
             }
             user = new userSchema({
@@ -201,7 +240,7 @@ router.post("/users",
                 role,
                 password,
                 telephone,
-                profilepicture,
+                profilepicture: profilepicture || "https://www.w3schools.com/howto/img_avatar.png",
                 manager,
                 contracttype,
                 jobtitle,
@@ -228,7 +267,7 @@ router.post("/users",
             );
         } catch (err) {
             console.log(err.message);
-            res.status(500).send("Error in Saving");
+            res.status(500).send(err.message);
         }
     }
 );

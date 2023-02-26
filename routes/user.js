@@ -7,15 +7,17 @@ const router = express.Router();
 
 const userSchema = require("../Schema/User");
 const demandeSchema = require("../Schema/Demande");
-const holidaysSchema = require("../Schema/Holidays");
 
 
 const auth = require("../auth");
 const { routerAuth, isManager, userAuth } = require("../auth");
-const { Int32 } = require("mongojs");
+const { Int32, ObjectId } = require("mongojs");
 const { json } = require("express");
 
 
+const multer = require('multer');
+const Recommendation = require("../Schema/Recommendation");
+const { default: mongoose } = require("mongoose");
 
 
 
@@ -41,9 +43,7 @@ router.post("/login",
         email = email.toLowerCase();
 
         try {
-            let user = await userSchema.findOne({
-                email
-            });
+            let user = await userSchema.findOne({ email });
 
             if (!user) {
                 console.log('user does not exist ' + email)
@@ -66,7 +66,7 @@ router.post("/login",
                 },
                 (err, token) => {
                     if (err) throw err;
-                    res.status(200).json({ token });
+                    res.status(200).json({ token, user });
                 }
             );
         } catch (e) {
@@ -79,63 +79,141 @@ router.post("/login",
 );
 
 
+router.get("/user/:id", userAuth,
+    async (req, res) => {
+        const decoded = jwt.verify(req.token, 'mlou5iya');
+        const userId = decoded.userId;
+
+        console.log(userId)
+        try {
+            const user = await userSchema.findById(userId);
+            res.json(user);
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
+    });
+
+function getDaysDifference(startDate, endDate) {
+    const oneDay = 24 * 60 * 60 * 1000;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffDays = Math.round(Math.abs((start - end) / oneDay));
+    return diffDays;
+}
 
 
-//create
+const filename = Math.random().toString(36).slice(2, 10);
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/');
+    },
+    filename: function (req, file, cb) {
+        cb(null, filename + "." + file.mimetype.split('/')[1]);
+    }
+});
+
+const upload = multer({ storage: storage });
+
+router.post('/upload-cv', upload.single('cv'), (req, res) => {
+    if (!req.file) {
+        console.log("No file received");
+        return res.status(400).send('No file uploaded');
+    }
+
+
+    res.send(filename + "." + req.file.mimetype.split('/')[1]);
+});
+
+router.post("/recommandation", userAuth, async (req, res) => {
+    const { nom, prenom, poste, email, message, telephone, file } = req.body;
+    const user = await userSchema.findById(req.user.id).select({ nom: 1, prenom: 1, email: 1 })
+    const demande = new Recommendation({
+        userNom: user.nom,
+        userPrenom: user.prenom,
+        userEmail: user.email,
+        nom: nom,
+        prenom: prenom,
+        poste: poste,
+        email: email,
+        message: message,
+        telephone: telephone,
+        file: file
+
+
+    });
+    try {
+        await demande.save();
+        res.status(200).json({ message: "Recommandation submitted successfully." });
+    } catch (err) {
+        console.log(err);
+        res.status(400).json({ message: "Recommandation Error" });
+    }
+});
+
+
+
+
 router.post("/demande", userAuth, async (req, res) => {
-    const { leaveDays, reason } = req.body;
-    const user = await userSchema.findById(req.session.employeeId).select({ soldeConges: 1 })
+    const { titre, startDate, endDate, reason, homeworking, malade } = req.body;
+    const leaveDays = getDaysDifference(startDate, endDate);
 
-    if (leaveDays > user.soldeConges) {
+    const user = await userSchema.findById(req.user.id).select({ soldeConges: 1, nom: 1, prenom: 1, email: 1, profilepicture: 1, soldeMaladie: 1 })
+    //console.log(user)
+    console.log(titre, " ", startDate, " ", endDate, " ", reason, " ", leaveDays, " ", user.soldeConges, leaveDays > user.soldeConges, " ", malade, " ", leaveDays > user.soldeMaladie, " ", user.nom, " ", user.prenom, " ", user.email, " ", user.profilepicture, " ", user.soldeMaladie, " ", user.soldeConges)
+
+    if ((malade == true && leaveDays < user.soldeMaladie) || (malade == false && leaveDays < user.soldeConges)) {
 
         const demande = new demandeSchema({
-            employee_id: req.session.employeeId,
-            leave_days: leaveDays,
-            status: "Pending",
+            user: req.user.id,
+            titre: titre,
+            start_date: startDate,
+            end_date: endDate,
             reason: reason,
+            homeworking: homeworking,
+            nom: user.nom,
+            prenom: user.prenom,
+            email: user.email,
+            soldeConges: user.soldeConges,
+            soldeMaladie: user.soldeMaladie,
+            userpicture: user.profilepicture
         });
         try {
             await demande.save();
             res.status(200).json({ message: "Leave application submitted successfully." });
         } catch (err) {
-            res.status(400).json({ message: err.message });
+            res.status(400).json({ message: "Solde Congés Insuffisant!" });
         }
     } else {
-        res.status(400).json({ error: "Employee doesn't have enough leave days." });
+
+        malade ? res.status(400).json({ message: "Employee doesn't have enough sickdays." }) :
+            res.status(400).json({ message: "Employee doesn't have enough leavedays." });
     }
 });
 
 
-//get demande by id
 router.get("/demande/:id", userAuth,
     async (req, res) => {
         try {
-            const demandes = await demandeSchema.findById(req.params.id);
+            const doc = await demandeSchema.find({ "user": ObjectId(req.user.id) })
             res.json(demandes);
         } catch (err) {
             res.status(500).json({ message: err.message });
         }
     });
 
-//get all demande
-router.get("/demande", userAuth,
+router.get("/demandes", userAuth,
     async (req, res) => {
-
+        console.log(req.user.id)
         try {
-            await demandeSchema.find({ "employee_id": ObjectID(req.user.id) }, async (err, doc) => {
-                if (err || !doc) {
-                    res.status(500).json({ message: err });
-                } else {
-                    res.status(200).json(doc);
-                }
-            })
+            const doc = await demandeSchema.find({ "user": ObjectId(req.user.id) })
+            res.status(200).json(doc);
         } catch (err) {
-            res.status(500).json({ message: err.message });
+            res.status(500).json({ message: 'rr' + err.message });
         }
     });
 
 
-//delete
 router.delete("/demande/:id", userAuth,
     async (req, res) => {
 
@@ -154,7 +232,6 @@ router.delete("/demande/:id", userAuth,
         }
     });
 
-//update
 router.patch("/demande/:id", userAuth,
 
     async (req, res) => {
@@ -175,7 +252,6 @@ router.patch("/demande/:id", userAuth,
         }
     });
 
-//update profile
 router.patch("/profile/:id", userAuth,
 
     async (req, res) => {
